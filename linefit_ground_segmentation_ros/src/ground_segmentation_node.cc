@@ -23,12 +23,16 @@ public:
                    const std::string& obstacle_topic,
                    const GroundSegmentationParams& params,
                    const bool& latch = false) : params_(params), segmenter_(params) {
-    ground_pub_ = nh.advertise<pcl::PointCloud<pcl::PointXYZ>>(ground_topic, 1, latch);
-    obstacle_pub_ = nh.advertise<pcl::PointCloud<pcl::PointXYZ>>(obstacle_topic, 1, latch);
+    ground_pub_ = nh.advertise<pcl::PointCloud<pcl::PointXYZI>>(ground_topic, 1, latch);
+    obstacle_pub_ = nh.advertise<pcl::PointCloud<pcl::PointXYZI>>(obstacle_topic, 1, latch);
     nh.param<std::string>("gravity_aligned_frame", gravity_aligned_frame_, "");
   }
 
-  void scanCallback(const pcl::PointCloud<pcl::PointXYZ>& cloud) {
+  void scanCallback(const pcl::PointCloud<pcl::PointXYZI>& cloud) {
+    // Convert PointXYZI to PointXYZ for segmentation
+    pcl::PointCloud<pcl::PointXYZ> cloud_xyz;
+    pcl::copyPointCloud(cloud, cloud_xyz);
+
     pcl::PointCloud<pcl::PointXYZ> cloud_transformed;
 
     std::vector<int> labels;
@@ -45,7 +49,7 @@ public:
         tf_stamped.transform.translation.z = 0;
         Eigen::Affine3d tf;
         tf::transformMsgToEigen(tf_stamped.transform, tf);
-        pcl::transformPointCloud(cloud, cloud_transformed, tf);
+        pcl::transformPointCloud(cloud_xyz, cloud_transformed, tf);
         is_original_pc = false;
       }
       catch (tf2::TransformException &ex) {
@@ -54,10 +58,10 @@ public:
     }
 
     // Trick to avoid PC copy if we do not transform.
-    const pcl::PointCloud<pcl::PointXYZ>& cloud_proc = is_original_pc ? cloud : cloud_transformed;
+    const pcl::PointCloud<pcl::PointXYZ>& cloud_proc = is_original_pc ? cloud_xyz : cloud_transformed;
 
     segmenter_.segment(cloud_proc, &labels);
-    pcl::PointCloud<pcl::PointXYZ> ground_cloud, obstacle_cloud;
+    pcl::PointCloud<pcl::PointXYZI> ground_cloud, obstacle_cloud;
     ground_cloud.header = cloud.header;
     obstacle_cloud.header = cloud.header;
     for (size_t i = 0; i < cloud.size(); ++i) {
